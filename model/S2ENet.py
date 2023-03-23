@@ -273,6 +273,16 @@ class S2ENet(nn.Module):
         b1_4 = self.conv3_a(b1_4)
         b2_4 = self.conv3_b(b2_4)
 
+        s = (32, 7, 7)
+
+        b1_1 = F.interpolate(b1_1.unsqueeze(0), size=s, mode='nearest').squeeze(0)
+        b1_2 = F.interpolate(b1_2.unsqueeze(0), size=s, mode='nearest').squeeze(0)
+        b1_3 = F.interpolate(b1_3.unsqueeze(0), size=s, mode='nearest').squeeze(0)
+
+        b2_1 = F.interpolate(b2_1.unsqueeze(0), size=s, mode='nearest').squeeze(0)
+        b2_2 = F.interpolate(b2_2.unsqueeze(0), size=s, mode='nearest').squeeze(0)
+        b2_3 = F.interpolate(b2_3.unsqueeze(0), size=s, mode='nearest').squeeze(0)
+
         print("b1:", b1_1.shape)
         print("b2:", b1_2.shape)
         print("b3:", b1_3.shape)
