@@ -167,35 +167,6 @@ class conv_bn_relu(nn.Module):
 
         return out
 
-# class SEblock(nn.Module):  # 注意力机制模块
-#     def __init__(self, channel, r=0.5):  # channel为输入的维度, r为全连接层缩放比例->控制中间层个数
-#         super(SEblock, self).__init__()
-#         # 全局均值池化
-#         self.global_avg_pool = nn.AdaptiveAvgPool2d(1)
-#         # 全连接层
-#         self.fc = nn.Sequential(
-#             nn.Linear(channel, int(channel * r)),  # int(channel * r)取整数
-#             nn.ReLU(),
-#             nn.Linear(int(channel * r), channel),
-#             nn.Sigmoid(),
-#         )
-#
-#     def forward(self, x):
-#         # 对x进行分支计算权重, 进行全局均值池化
-#         branch = self.global_avg_pool(x)
-#         branch = branch.view(branch.size(0), -1)
-#
-#         # 全连接层得到权重
-#         weight = self.fc(branch)
-#
-#         # 将维度为b, c的weight, reshape成b, c, 1, 1 与 输入x 相乘
-#         h, w = weight.shape
-#         weight = torch.reshape(weight, (h, w, 1, 1))
-#
-#         # 乘积获得结果
-#         scale = weight * x
-#         return scale
-
 
 class S2ENet(nn.Module):
 
@@ -283,10 +254,10 @@ class S2ENet(nn.Module):
         b2_2 = F.interpolate(b2_2.unsqueeze(0), size=s, mode='nearest').squeeze(0)
         b2_3 = F.interpolate(b2_3.unsqueeze(0), size=s, mode='nearest').squeeze(0)
 
-        print("b1:", b1_1.shape)
-        print("b2:", b1_2.shape)
-        print("b3:", b1_3.shape)
-        print("b4:", b1_4.shape)
+        # print("b1:", b1_1.shape)
+        # print("b2:", b1_2.shape)
+        # print("b3:", b1_3.shape)
+        # print("b4:", b1_4.shape)
 
         # 归一化权重
         w1_1 = torch.exp(self.w_hsl[0]) / torch.sum(torch.exp(self.w_hsl))
@@ -302,12 +273,22 @@ class S2ENet(nn.Module):
         x1 = b1_1 * w1_1 + b1_2 * w1_2 + b1_3 * w1_3 + b1_4 * w1_4
         x2 = b2_1 * w2_1 + b2_2 * w2_2 + b2_3 * w2_3 + b2_4 * w2_4
 
-        print("特征融合结果:", x1.shape)
+        # print("特征融合结果:", x1.shape)
 
         ss_x1 = self.SAEM(x1, x2)
         ss_x2 = self.SEEM(x2, x1)
 
-        x = self.FusionLayer(torch.cat([ss_x1, ss_x2], 1))
+        n = ss_x1.shape[0]
+        # 用 1 扩充维度
+        ss_x1 = torch.cat([ss_x1, torch.ones(n, 1)], dim=1)
+        ss_x2 = torch.cat([ss_x2, torch.ones(n, 1)], dim=1)
+        # 计算笛卡尔积
+        ss_x1 = ss_x1.unsqueeze(2)  # [n, ss_x1, 1]
+        ss_x2 = ss_x2.unsqueeze(1)  # [n, 1, ss_x2]
+        fusion_x = torch.einsum('nxt, nty->nxy', ss_x1, ss_x2)  # [n, ss_x1, ss_x2]
+        fusion_x = fusion_x.flatten(start_dim=1).unsqueeze(1)  # [n, ss_x1*ss_x2, 1]
+
+        x = self.FusionLayer(fusion_x)
         x = self.avg_pool(x)
         x = torch.flatten(x, 1)
         x = self.fc(x)
