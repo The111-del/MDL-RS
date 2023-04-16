@@ -167,6 +167,35 @@ class conv_bn_relu(nn.Module):
 
         return out
 
+class SEblock(nn.Module):  # 注意力机制模块
+    def __init__(self, channel, r=0.5):  # channel为输入的维度, r为全连接层缩放比例->控制中间层个数
+        super(SEblock, self).__init__()
+        # 全局均值池化
+        self.global_avg_pool = nn.AdaptiveAvgPool2d(1)
+        # 全连接层
+        self.fc = nn.Sequential(
+            nn.Linear(channel, int(channel * r)),  # int(channel * r)取整数
+            nn.ReLU(),
+            nn.Linear(int(channel * r), channel),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x):
+        # 对x进行分支计算权重, 进行全局均值池化
+        branch = self.global_avg_pool(x)
+        branch = branch.view(branch.size(0), -1)
+
+        # 全连接层得到权重
+        weight = self.fc(branch)
+
+        # 将维度为b, c的weight, reshape成b, c, 1, 1 与 输入x 相乘
+        h, w = weight.shape
+        weight = torch.reshape(weight, (h, w, 1, 1))
+
+        # 乘积获得结果
+        scale = weight * x
+        return scale
+
 
 class S2ENet(nn.Module):
 
@@ -201,21 +230,24 @@ class S2ENet(nn.Module):
             nn.AvgPool2d(3, 1, padding=1)
         )
 
+        self.branch_SE = SEblock(channel=32)
+
         self.w_hsl = nn.Parameter(torch.ones(4))
         self.w_lidar = nn.Parameter(torch.ones(4))
 
         self.SAEM = Spatial_Enhance_Module(in_channels=self.planes_a[2], inter_channels=self.planes_a[2]//2, size=patch_size)
         self.SEEM = Spectral_Enhance_Module(in_channels=self.planes_b[2], in_channels2=self.planes_a[2])
 
-        self.FusionLayer = nn.Sequential(
-            nn.Conv2d(
-                in_channels=self.planes_a[2] * 2,
-                out_channels=self.planes_a[2],
-                kernel_size=1,
-            ),
-            nn.BatchNorm2d(self.planes_a[2]),
-            nn.ReLU(),
-        )
+        # self.FusionLayer = nn.Sequential(
+        #     nn.Conv2d(
+        #         in_channels=self.planes_a[2] * 2,
+        #         out_channels=self.planes_a[2],
+        #         kernel_size=1,
+        #     ),
+        #     nn.BatchNorm2d(self.planes_a[2]),
+        #     nn.ReLU(),
+        # )
+
         self.fc = nn.Linear(self.planes_a[2], n_classes)
 
         for m in self.modules():
@@ -278,17 +310,8 @@ class S2ENet(nn.Module):
         ss_x1 = self.SAEM(x1, x2)
         ss_x2 = self.SEEM(x2, x1)
 
-        n = ss_x1.shape[0]
-        # 用 1 扩充维度
-        ss_x1 = torch.cat([ss_x1, torch.ones(n, 1)], dim=1)
-        ss_x2 = torch.cat([ss_x2, torch.ones(n, 1)], dim=1)
-        # 计算笛卡尔积
-        ss_x1 = ss_x1.unsqueeze(2)  # [n, ss_x1, 1]
-        ss_x2 = ss_x2.unsqueeze(1)  # [n, 1, ss_x2]
-        fusion_x = torch.einsum('nxt, nty->nxy', ss_x1, ss_x2)  # [n, ss_x1, ss_x2]
-        fusion_x = fusion_x.flatten(start_dim=1).unsqueeze(1)  # [n, ss_x1*ss_x2, 1]
-
-        x = self.FusionLayer(fusion_x)
+        x_combine = torch.cat((ss_x1, ss_x2), dim=1)
+        x = self.branch_SE(x_combine)
         x = self.avg_pool(x)
         x = torch.flatten(x, 1)
         x = self.fc(x)
