@@ -194,6 +194,7 @@ class SEblock(nn.Module):  # 注意力机制模块
 
         # 乘积获得结果
         scale = weight * x
+        print("scale:", scale.shape)
         return scale
 
 
@@ -230,7 +231,7 @@ class S2ENet(nn.Module):
             nn.AvgPool2d(3, 1, padding=1)
         )
 
-        self.branch_SE = SEblock(channel=32)
+        self.branch_SE = SEblock(channel=64)
 
         self.w_hsl = nn.Parameter(torch.ones(4))
         self.w_lidar = nn.Parameter(torch.ones(4))
@@ -238,15 +239,15 @@ class S2ENet(nn.Module):
         self.SAEM = Spatial_Enhance_Module(in_channels=self.planes_a[2], inter_channels=self.planes_a[2]//2, size=patch_size)
         self.SEEM = Spectral_Enhance_Module(in_channels=self.planes_b[2], in_channels2=self.planes_a[2])
 
-        # self.FusionLayer = nn.Sequential(
-        #     nn.Conv2d(
-        #         in_channels=self.planes_a[2] * 2,
-        #         out_channels=self.planes_a[2],
-        #         kernel_size=1,
-        #     ),
-        #     nn.BatchNorm2d(self.planes_a[2]),
-        #     nn.ReLU(),
-        # )
+        self.FusionLayer = nn.Sequential(
+            nn.Conv2d(
+                in_channels=self.planes_a[2] * 2,
+                out_channels=self.planes_a[2],
+                kernel_size=1,
+            ),
+            nn.BatchNorm2d(self.planes_a[2]),
+            nn.ReLU(),
+        )
 
         self.fc = nn.Linear(self.planes_a[2], n_classes)
 
@@ -309,9 +310,14 @@ class S2ENet(nn.Module):
 
         ss_x1 = self.SAEM(x1, x2)
         ss_x2 = self.SEEM(x2, x1)
-
-        x_combine = torch.cat((ss_x1, ss_x2), dim=1)
-        x = self.branch_SE(x_combine)
+        # print("ss_x1:", ss_x1.shape)
+        # print("ss_x2:", ss_x2.shape)
+        x = torch.cat((ss_x1, ss_x2), dim=1)
+        # print("x_combine:", x_combine.shape)
+        x = self.branch_SE(x)
+        x = F.interpolate(x.unsqueeze(0), size=s, mode='nearest').squeeze(0)
+        # x = self.FusionLayer(x)
+        # print("x:", x.shape)
         x = self.avg_pool(x)
         x = torch.flatten(x, 1)
         x = self.fc(x)
