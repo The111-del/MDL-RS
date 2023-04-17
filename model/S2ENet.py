@@ -197,6 +197,42 @@ class SEblock(nn.Module):  # 注意力机制模块
         print("scale:", scale.shape)
         return scale
 
+class AFF(nn.Module):
+    # 多特征融合 AFF
+
+    def __init__(self, channels=32, r=2):
+        super(AFF, self).__init__()
+        inter_channels = int(channels // r)
+
+        self.local_att = nn.Sequential(
+            nn.Conv2d(channels, inter_channels, kernel_size=1, stride=1, padding=0),
+            nn.BatchNorm2d(inter_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(inter_channels, channels, kernel_size=1, stride=1, padding=0),
+            nn.BatchNorm2d(channels),
+        )
+
+        self.global_att = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(channels, inter_channels, kernel_size=1, stride=1, padding=0),
+            nn.BatchNorm2d(inter_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(inter_channels, channels, kernel_size=1, stride=1, padding=0),
+            nn.BatchNorm2d(channels),
+        )
+
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x, residual):
+        xa = x + residual
+        xl = self.local_att(xa)
+        xg = self.global_att(xa)
+        xlg = xl + xg
+        wei = self.sigmoid(xlg)
+
+        xo = 2 * x * wei + 2 * residual * (1 - wei)
+        return xo
+
 
 class S2ENet(nn.Module):
 
@@ -232,6 +268,8 @@ class S2ENet(nn.Module):
         )
 
         self.branch_SE = SEblock(channel=64)
+
+        self.branch_AFF = AFF()
 
         self.w_hsl = nn.Parameter(torch.ones(4))
         self.w_lidar = nn.Parameter(torch.ones(4))
@@ -312,15 +350,19 @@ class S2ENet(nn.Module):
         ss_x2 = self.SEEM(x2, x1)
         # print("ss_x1:", ss_x1.shape)
         # print("ss_x2:", ss_x2.shape)
-        x = torch.cat((ss_x1, ss_x2), dim=1)
+        #x = torch.cat((ss_x1, ss_x2), dim=1)
         # print("x_combine:", x_combine.shape)
-        x = self.branch_SE(x)
-        x = F.interpolate(x.unsqueeze(0), size=s, mode='nearest').squeeze(0)
+        # x = self.branch_SE(x)
+        # x = F.interpolate(x.unsqueeze(0), size=s, mode='nearest').squeeze(0)
         # x = self.FusionLayer(x)
-        # print("x:", x.shape)
+        x = self.branch_AFF(ss_x1, ss_x2)
+        print("x:", x.shape)
         x = self.avg_pool(x)
+        print("x:", x.shape)
         x = torch.flatten(x, 1)
+        print("x:", x.shape)
         x = self.fc(x)
+        print("x:", x.shape)
 
         return x
 
