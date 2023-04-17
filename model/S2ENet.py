@@ -279,7 +279,7 @@ class S2ENet(nn.Module):
 
         self.FusionLayer = nn.Sequential(
             nn.Conv2d(
-                in_channels=self.planes_a[2] * 2,
+                in_channels=self.planes_a[2],
                 out_channels=self.planes_a[2],
                 kernel_size=1,
             ),
@@ -354,16 +354,11 @@ class S2ENet(nn.Module):
         # print("x_combine:", x_combine.shape)
         # x = self.branch_SE(x)
         # x = F.interpolate(x.unsqueeze(0), size=s, mode='nearest').squeeze(0)
-        # x = self.FusionLayer(x)
         x = self.branch_AFF(ss_x1, ss_x2)
-        print("x:", x.shape)
+        x = self.FusionLayer(x)
         x = self.avg_pool(x)
-        print("x:", x.shape)
         x = torch.flatten(x, 1)
-        print("x:", x.shape)
         x = self.fc(x)
-        print("x:", x.shape)
-
         return x
 
 
