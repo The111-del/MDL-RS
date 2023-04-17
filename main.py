@@ -405,6 +405,8 @@ for run in range(N_RUNS):
             n_classes=N_CLASSES,
         )
 
+    scio.savemat('./prediction.mat', {'prediction': prediction})
+    
     mask = np.zeros(gt.shape, dtype="bool")
     for l in IGNORED_LABELS:
         mask[gt == l] = True
@@ -424,7 +426,7 @@ for run in range(N_RUNS):
     results.append(run_results)
     show_results(run_results, viz, label_values=LABEL_VALUES)
 
-    scio.savemat('./prediction.mat', {'prediction': prediction})
+
 
 if N_RUNS > 1:
     show_results(results, viz, label_values=LABEL_VALUES, agregated=True)
